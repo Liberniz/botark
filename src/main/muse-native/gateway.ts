@@ -542,7 +542,8 @@ export class MuseNativeGateway extends EventEmitter {
     method: string,
     params: Record<string, unknown>,
     timeoutMs: number | undefined,
-    allowPathRedirect: boolean
+    allowPathRedirect: boolean,
+    allowBodyMethodRetry = true
   ): Promise<unknown> {
     await this.connect()
     const req = this.buildRequest(method, params)
@@ -569,7 +570,25 @@ export class MuseNativeGateway extends EventEmitter {
         if (redirected && redirected !== currentBase && spec && !spec.path.includes('{')) {
           this.pathOverrides.set(method, redirected)
           this.log('muse-native: learned method path override', { method, path: redirected })
-          return this.requestInternal(method, params, timeoutMs, false)
+          return this.requestInternal(method, params, timeoutMs, false, false)
+        }
+        // Fork patch (Liberniz): the daemon answers "`method` must be
+        // `/api/session/start`" even when the envelope path already is
+        // exactly that string, so the validated `method` cannot be the
+        // envelope path. Retry once with the canonical path carried in the
+        // JSON body as `method`, which is the remaining place a daemon-side
+        // RPC dispatcher would read it from.
+        if (
+          allowBodyMethodRetry &&
+          res.status === 400 &&
+          redirected &&
+          redirected === currentBase &&
+          spec &&
+          spec.httpMethod !== 'GET' &&
+          !('method' in params)
+        ) {
+          this.log('muse-native: retrying with method field in body', { method, path: redirected })
+          return this.requestInternal(method, { ...params, method: redirected }, timeoutMs, false, false)
         }
       }
       let errJson: unknown = errText

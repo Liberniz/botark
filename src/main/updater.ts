@@ -7,7 +7,7 @@ import { checkFailedMessage, interpretLatestRelease } from './updateCheck'
 import { inspectMacCodeSignature } from './securityVault'
 
 const CHECK_INTERVAL_MS = 4 * 60 * 60 * 1000
-const GITHUB_OWNER = 'qybaihe'
+const GITHUB_OWNER = 'Liberniz'
 const GITHUB_REPO = 'botark'
 const RELEASES_LATEST = `https://github.com/${GITHUB_OWNER}/${GITHUB_REPO}/releases/latest`
 const GITHUB_API_LATEST = `https://api.github.com/repos/${GITHUB_OWNER}/${GITHUB_REPO}/releases/latest`

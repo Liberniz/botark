@@ -81,7 +81,7 @@ module.exports = {
   publish: [
     {
       provider: 'github',
-      owner: 'qybaihe',
+      owner: 'Liberniz',
       repo: 'botark',
       // CI creates the draft first and every platform job uploads into it,
       // then one final step publishes. No job ever creates the release, so

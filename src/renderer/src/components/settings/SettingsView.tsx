@@ -730,7 +730,7 @@ export function SettingsView() {
     }
   }
 
-  const NAV: Array<{ id: SettingsTab; label: string; icon: typeof Users; platformId?: PlatformId; count?: number }> = [
+  const NAV_ALL: Array<{ id: SettingsTab; label: string; icon: typeof Users; platformId?: PlatformId; count?: number }> = [
     { id: 'overview', label: '总览', icon: LayoutDashboard, count: bots.length },
     { id: 'muse-accounts', label: 'Meta Muse', icon: Users, platformId: 'meta-muse', count: museAccounts.length },
     { id: 'dot-accounts', label: 'ChatGPT Dot', icon: Users, platformId: 'dot', count: dotAccounts.length },
@@ -756,6 +756,8 @@ export function SettingsView() {
     { id: 'proxy-pool', label: '代理池', icon: Server, count: pool.length },
     { id: 'general', label: '常规与安全', icon: Settings }
   ]
+  // Fork note (Liberniz): Muse-only fork — hide other platforms' settings tabs.
+  const NAV = NAV_ALL.filter((item) => !item.platformId || item.platformId === 'meta-muse')
 
   return (
     <div className="flex min-h-0 flex-1 flex-col bg-main">
@@ -906,7 +908,9 @@ export function SettingsView() {
                         desc: 'Manus API'
                       }
                     ] as const
-                  ).map((p) => {
+                  )
+                    .filter((entry) => entry.id === 'meta-muse')
+                    .map((p) => {
                     const onCount = p.list.filter(
                       (a) => a.status === 'online' || a.status === 'busy' || a.status === 'attention'
                     ).length

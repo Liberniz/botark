@@ -6,19 +6,6 @@ import { app, BrowserWindow, shell } from 'electron'
 import { attachWebViewManager, registerWebViewIpc } from './webViewIpc'
 import { attachMuseSessionManager, disposeAllMuseManagers, registerMuseIpc } from './muse/museIpc'
 import { registerUpdaterIpc, startAutoUpdater } from './updater'
-import { registerGrokIpc } from './grok/grokIpc'
-import { stopGrokAccountWatch } from './grok/grokWatchManager'
-import { registerHarkIpc } from './hark/harkIpc'
-import { cancelHarkWatch } from './hark/harkClient'
-import { registerDotIpc } from './dot/dotIpc'
-import { closeCelsiusWatcher } from './dot/dotClient'
-import { registerHermesIpc } from './hermes/hermesIpc'
-import { cancelAllHermesRuns } from './hermes/hermesClient'
-import { registerAntigravityIpc } from './antigravity/antigravityIpc'
-import { cancelAllAntigravityRuns } from './antigravity/antigravityClient'
-import { registerCueIpc } from './cue/cueIpc'
-import { findCueCallbackArg, handleCueDesktopCallbackUrl } from './cue/cueDesktopHandoff'
-import { stopCueAccountWatch } from './cue/cueWatchManager'
 import { registerMobileSyncIpc, stopMobileSyncServer } from './mobileSync/mobileSyncIpc'
 import { applyAllStoredProxies } from './muse/accountProxy'
 import { closeAllLocalProxyBridges } from './localProxyBridge'
@@ -34,30 +21,6 @@ try {
 const isMac = process.platform === 'darwin'
 let mainWindow: BrowserWindow | null = null
 let quitting = false
-let readyForDeepLinks = false
-const pendingCueCallbacks: string[] = []
-
-function dispatchCueCallback(rawUrl: string): void {
-  if (!readyForDeepLinks) {
-    pendingCueCallbacks.push(rawUrl)
-    return
-  }
-  void handleCueDesktopCallbackUrl(rawUrl).catch((err) =>
-    console.error('[cue] desktop callback failed', err instanceof Error ? err.message : err)
-  )
-  if (mainWindow && !mainWindow.isDestroyed()) {
-    if (mainWindow.isMinimized()) mainWindow.restore()
-    mainWindow.show()
-    mainWindow.focus()
-  }
-}
-
-// macOS delivers `cuedev://oauth/desktop-callback?...` via `open-url` instead of `second-instance`.
-app.on('open-url', (event, url) => {
-  if (!url.toLowerCase().startsWith('cuedev://')) return
-  event.preventDefault()
-  dispatchCueCallback(url)
-})
 
 // Seamless upgrade from legacy "bothub" userData directory: if an existing user
 // already has accounts/sessions in Application Support/bothub and no new botark
@@ -86,21 +49,11 @@ const gotLock = app.requestSingleInstanceLock()
 if (!gotLock) {
   app.quit()
 } else {
-  app.on('second-instance', (_event, argv) => {
-    // Windows delivers `cuedev://oauth/desktop-callback?...` (Cue browser login) as an argv entry.
-    const cueCallback = findCueCallbackArg(argv)
-    if (cueCallback) {
-      dispatchCueCallback(cueCallback)
-    }
+  app.on('second-instance', () => {
     if (!mainWindow || mainWindow.isDestroyed()) return
     if (mainWindow.isMinimized()) mainWindow.restore()
     mainWindow.show()
     mainWindow.focus()
-    if (Array.isArray(argv) && argv.includes('--open-grok-login')) {
-      void mainWindow.webContents
-        .executeJavaScript("window.dispatchEvent(new CustomEvent('bothub:open-grok-login'))")
-        .catch(() => undefined)
-    }
   })
 }
 
@@ -189,18 +142,11 @@ function createMainWindow(): BrowserWindow {
     console.warn('[bothub] main window became unresponsive')
   })
 
-  const wantGrokLogin = process.argv.includes('--open-grok-login')
   const devUrl = process.env['ELECTRON_RENDERER_URL']
   if (!app.isPackaged && devUrl) {
-    const targetUrl = wantGrokLogin
-      ? `${devUrl}${devUrl.includes('?') ? '&' : '?'}openGrokLogin=1`
-      : devUrl
-    void win.loadURL(targetUrl)
+    void win.loadURL(devUrl)
   } else {
-    void win.loadFile(
-      join(__dirname, '../renderer/index.html'),
-      wantGrokLogin ? { query: { openGrokLogin: '1' } } : undefined
-    )
+    void win.loadFile(join(__dirname, '../renderer/index.html'))
   }
 
   return win
@@ -210,12 +156,6 @@ app.on('before-quit', () => {
   quitting = true
   void stopSlack()
   stopWorkspaces()
-  stopGrokAccountWatch('*')
-  closeCelsiusWatcher('*')
-  cancelHarkWatch('*')
-  cancelAllHermesRuns('*')
-  cancelAllAntigravityRuns('*')
-  stopCueAccountWatch('*')
   void stopMobileSyncServer()
   disposeAllMuseManagers()
   void closeAllLocalProxyBridges()
@@ -229,24 +169,11 @@ app.whenReady().then(async () => {
   registerWebViewIpc()
   registerMuseIpc()
   registerUpdaterIpc()
-  registerGrokIpc()
-  registerHarkIpc()
-  registerDotIpc()
-  registerHermesIpc()
-  registerAntigravityIpc()
-  registerCueIpc()
   registerMobileSyncIpc()
   registerVaultIpc()
   registerWorkspaceIpc(() => mainWindow)
   registerSlackIpc(() => mainWindow)
   mainWindow = createMainWindow()
-  readyForDeepLinks = true
-  const initialCueCallback = findCueCallbackArg(process.argv)
-  if (initialCueCallback) pendingCueCallbacks.push(initialCueCallback)
-  while (pendingCueCallbacks.length > 0) {
-    const nextUrl = pendingCueCallbacks.shift()
-    if (nextUrl) dispatchCueCallback(nextUrl)
-  }
   startAutoUpdater()
 
   app.on('activate', () => {

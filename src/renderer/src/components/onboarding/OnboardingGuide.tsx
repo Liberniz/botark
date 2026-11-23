@@ -71,7 +71,7 @@ interface PlatformGuideItem {
   grokState: string
 }
 
-const PLATFORM_GUIDE_ITEMS: PlatformGuideItem[] = [
+const ALL_PLATFORM_GUIDE_ITEMS: PlatformGuideItem[] = [
   {
     id: 'grok',
     title: 'Grok Bot',
@@ -167,6 +167,11 @@ const PLATFORM_GUIDE_ITEMS: PlatformGuideItem[] = [
   }
 ]
 
+// Fork note (Liberniz): Muse-only fork — the guide covers Meta Muse only.
+const PLATFORM_GUIDE_ITEMS: PlatformGuideItem[] = ALL_PLATFORM_GUIDE_ITEMS.filter(
+  (item) => item.id === 'meta-muse'
+)
+
 function FullScreenGuideBody({
   isOverlay,
   onClose
@@ -179,7 +184,7 @@ function FullScreenGuideBody({
   const setOnboardingOpen = useBotStore((s) => s.setOnboardingOpen)
 
   const [step, setStep] = useState<StepId>('workspace')
-  const [selectedPlatform, setSelectedPlatform] = useState<PlatformId>('grok')
+  const [selectedPlatform, setSelectedPlatform] = useState<PlatformId>('meta-muse')
   const [pokeSignal, setPokeSignal] = useState(0)
 
   const stepIndex = STEPS.findIndex((s) => s.id === step)
