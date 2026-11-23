@@ -498,11 +498,20 @@ export class MuseNativeGateway extends EventEmitter {
     const { path, rest } = substitutePath(template, params)
     const isGet = spec.httpMethod === 'GET'
     const isEmptyBody = isGet || spec.requestBody === 'empty'
+    // Fork patch (Liberniz): the daemon's session service validates a
+    // `method` field inside the JSON body (400 invalid_params:
+    // "`method` must be `/api/session/start`"), but the Noise envelope
+    // only carries verb + path — so session.* calls must repeat their
+    // canonical path in the body. Proactively, for every /api/session/*
+    // call with a body; the reactive retry in requestInternal stays as
+    // a fallback for any other method that starts demanding one.
+    const bodyParams =
+      !isEmptyBody && path.startsWith('/api/session/') && !('method' in rest) ? { method: path, ...rest } : rest
     return {
       service: (spec.service ?? 'daemon') as ServiceName,
       verb: spec.httpMethod,
       path: isGet ? path + toQuery(rest, path) : path,
-      body: isEmptyBody ? new Uint8Array(0) : new TextEncoder().encode(JSON.stringify(rest)),
+      body: isEmptyBody ? new Uint8Array(0) : new TextEncoder().encode(JSON.stringify(bodyParams)),
       subscription: !!spec.subscription,
       streamMode: spec.streamMode ?? (spec.subscription ? 'subscription' : 'unary'),
       responseType: spec.responseType,
