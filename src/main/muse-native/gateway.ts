@@ -498,15 +498,17 @@ export class MuseNativeGateway extends EventEmitter {
     const { path, rest } = substitutePath(template, params)
     const isGet = spec.httpMethod === 'GET'
     const isEmptyBody = isGet || spec.requestBody === 'empty'
-    // Fork patch (Liberniz): the daemon's session service validates a
-    // `method` field inside the JSON body (400 invalid_params:
-    // "`method` must be `/api/session/start`"), but the Noise envelope
-    // only carries verb + path — so session.* calls must repeat their
-    // canonical path in the body. Proactively, for every /api/session/*
-    // call with a body; the reactive retry in requestInternal stays as
-    // a fallback for any other method that starts demanding one.
+    // Fork patch (Liberniz): the daemon's session service expects a
+    // JSON-RPC-shaped body — it validates a `method` field (400
+    // invalid_params: "`method` must be `/api/session/start`") and then
+    // a `params` field ("`params` is required") — but the Noise envelope
+    // only carries verb + path and BotArk historically sent the bare
+    // params object. Wrap session.* bodies as { method, params } for
+    // every /api/session/* call with a body; the reactive retry in
+    // requestInternal stays as a fallback for any other method that
+    // starts demanding the same shape.
     const bodyParams =
-      !isEmptyBody && path.startsWith('/api/session/') && !('method' in rest) ? { method: path, ...rest } : rest
+      !isEmptyBody && path.startsWith('/api/session/') && !('method' in rest) ? { method: path, params: rest } : rest
     return {
       service: (spec.service ?? 'daemon') as ServiceName,
       verb: spec.httpMethod,
@@ -581,12 +583,12 @@ export class MuseNativeGateway extends EventEmitter {
           this.log('muse-native: learned method path override', { method, path: redirected })
           return this.requestInternal(method, params, timeoutMs, false, false)
         }
-        // Fork patch (Liberniz): the daemon answers "`method` must be
-        // `/api/session/start`" even when the envelope path already is
-        // exactly that string, so the validated `method` cannot be the
-        // envelope path. Retry once with the canonical path carried in the
-        // JSON body as `method`, which is the remaining place a daemon-side
-        // RPC dispatcher would read it from.
+        // Fork patch (Liberniz): fallback for any method whose daemon
+        // service starts demanding the JSON-RPC body shape even though
+        // the envelope path already matches what it asks for (the
+        // session.* calls are handled proactively in buildRequest; this
+        // covers anything else that adopts the same contract). Retry
+        // once with { method: <demanded path>, params: <original> }.
         if (
           allowBodyMethodRetry &&
           res.status === 400 &&
@@ -596,8 +598,8 @@ export class MuseNativeGateway extends EventEmitter {
           spec.httpMethod !== 'GET' &&
           !('method' in params)
         ) {
-          this.log('muse-native: retrying with method field in body', { method, path: redirected })
-          return this.requestInternal(method, { ...params, method: redirected }, timeoutMs, false, false)
+          this.log('muse-native: retrying with method/params body', { method, path: redirected })
+          return this.requestInternal(method, { method: redirected, params }, timeoutMs, false, false)
         }
       }
       let errJson: unknown = errText
