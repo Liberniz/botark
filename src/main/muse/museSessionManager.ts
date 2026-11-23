@@ -1444,6 +1444,7 @@ export class MuseSessionManager {
 
   async listSessions(accountId: string): Promise<MuseChatSessionView[]> {
     const raw = await this.rpc(accountId, 'sessions.list', {})
+    void this.dumpSessionShapes(accountId, raw)
     const list = sessionsFromListResult(raw)
     const session = this.sessions.get(accountId)
     if (session) session.chatSessions = list
@@ -1550,6 +1551,33 @@ export class MuseSessionManager {
   private writeSessionProbeLog(lines: string[]): void {
     try {
       writeFileSync(join(app.getPath('userData'), 'session-probe-result.txt'), lines.join('\n') + '\n')
+    } catch {
+      /* best effort */
+    }
+  }
+
+  // Fork diagnostic (Liberniz, TEMPORARY): dump the daemon's raw session
+  // records (list + per-session get) to session-dump.json so the field
+  // that marks a session's origin / lifecycle — main chat vs side chat —
+  // can be identified from real data instead of guessed.
+  private async dumpSessionShapes(accountId: string, listRaw: unknown): Promise<void> {
+    try {
+      const gets: Record<string, unknown> = {}
+      const ids = sessionsFromListResult(listRaw)
+        .slice(0, 8)
+        .map((s) => s.id)
+        .filter(Boolean)
+      for (const id of ids) {
+        try {
+          gets[id] = await this.rpc(accountId, 'sessions.get', { id })
+        } catch (e) {
+          gets[id] = `ERROR ${e instanceof Error ? e.message.slice(0, 120) : String(e)}`
+        }
+      }
+      writeFileSync(
+        join(app.getPath('userData'), 'session-dump.json'),
+        JSON.stringify({ list: listRaw, gets }, null, 2)
+      )
     } catch {
       /* best effort */
     }
