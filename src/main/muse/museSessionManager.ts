@@ -1,4 +1,6 @@
-import { BrowserWindow, Notification, session as electronSession, shell, type WebContents } from 'electron'
+import { app, BrowserWindow, Notification, session as electronSession, shell, type WebContents } from 'electron'
+import { writeFileSync } from 'node:fs'
+import { join } from 'node:path'
 import type { MuseMainEvent, MuseSessionStatus, WebViewBounds } from '@shared/ipc'
 import { extractRawApprovalItems, mapMuseApproval } from '@shared/museApprovals'
 import { getAppWindowIcon } from '../appIcon'
@@ -1484,7 +1486,7 @@ export class MuseSessionManager {
   }
 
   async startSession(accountId: string): Promise<{ sessionId: string | null }> {
-    const raw = await this.rpc(accountId, 'session.start', {})
+    const raw = await this.startSessionProbe(accountId)
     const o = raw && typeof raw === 'object' ? (raw as Record<string, unknown>) : {}
     const nested = o['session'] && typeof o['session'] === 'object' ? (o['session'] as Record<string, unknown>) : o
     const sessionId =
@@ -1497,6 +1499,56 @@ export class MuseSessionManager {
     if (session && sessionId) session.activeSessionId = sessionId
     void this.listSessions(accountId)
     return { sessionId }
+  }
+
+  // Fork probe (Liberniz, TEMPORARY diagnostic for v0.13.4): the daemon
+  // rejects session.start {} with "invalid session origin or lifecycle"
+  // and the accepted values are documented nowhere. Try candidate param
+  // shapes in order, log every outcome to session-probe-result.txt in
+  // userData, and return the first response that does not throw. Once
+  // the winning shape is known this collapses back to a single call.
+  private async startSessionProbe(accountId: string): Promise<unknown> {
+    const candidates: Array<Record<string, unknown>> = [
+      { origin: 'web', lifecycle: 'persistent' },
+      { origin: 'web', lifecycle: 'ephemeral' },
+      { origin: 'chat', lifecycle: 'persistent' },
+      { origin: 'user', lifecycle: 'persistent' },
+      { origin: 'desktop', lifecycle: 'persistent' },
+      { origin: 'muse', lifecycle: 'persistent' },
+      { origin: 'app', lifecycle: 'persistent' },
+      { origin: 'web', lifecycle: 'active' },
+      { origin: 'web', lifecycle: 'standard' },
+      { origin: 'web' },
+      { lifecycle: 'persistent' },
+      { origin: { kind: 'web' }, lifecycle: 'persistent' },
+      { origin: { type: 'web' }, lifecycle: 'persistent' },
+      { session_origin: 'web', session_lifecycle: 'persistent' },
+      { origin: 'WEB', lifecycle: 'PERSISTENT' },
+      { origin: 'hatch', lifecycle: 'persistent' }
+    ]
+    const lines: string[] = [`session.start probe ${new Date().toISOString()}`]
+    let lastError: unknown = null
+    for (const candidate of candidates) {
+      try {
+        const raw = await this.rpc(accountId, 'session.start', candidate)
+        lines.push(`OK   ${JSON.stringify(candidate)}`)
+        this.writeSessionProbeLog(lines)
+        return raw
+      } catch (e) {
+        lastError = e
+        lines.push(`FAIL ${JSON.stringify(candidate)} -> ${e instanceof Error ? e.message.slice(0, 160) : String(e)}`)
+      }
+    }
+    this.writeSessionProbeLog(lines)
+    throw lastError instanceof Error ? lastError : new Error('session.start: all probe candidates failed')
+  }
+
+  private writeSessionProbeLog(lines: string[]): void {
+    try {
+      writeFileSync(join(app.getPath('userData'), 'session-probe-result.txt'), lines.join('\n') + '\n')
+    } catch {
+      /* best effort */
+    }
   }
 
   async loadSessionHistory(accountId: string, sessionId: string): Promise<MuseHistoryMessageView[]> {
