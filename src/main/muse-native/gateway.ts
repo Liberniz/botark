@@ -494,8 +494,13 @@ export class MuseNativeGateway extends EventEmitter {
   } {
     const spec = MUSE_METHODS[method]
     if (!spec) throw new MuseGatewayError(`unknown muse method ${method}`, 'unknown_method')
+    // Fork probe v2 (Liberniz, TEMPORARY): magic keys let the
+    // session.start probe override the envelope path and send a verbatim
+    // JSON body, bypassing the { method, params } wrap below.
+    const { __probe_body, __probe_path, ...cleanParams } = params
     const template = this.pathOverrides.get(method) ?? spec.path
-    const { path, rest } = substitutePath(template, params)
+    const { path: subPath, rest } = substitutePath(template, cleanParams)
+    const path = typeof __probe_path === 'string' ? __probe_path : subPath
     const isGet = spec.httpMethod === 'GET'
     const isEmptyBody = isGet || spec.requestBody === 'empty'
     // Fork patch (Liberniz): the daemon's session service expects a
@@ -513,7 +518,12 @@ export class MuseNativeGateway extends EventEmitter {
       service: (spec.service ?? 'daemon') as ServiceName,
       verb: spec.httpMethod,
       path: isGet ? path + toQuery(rest, path) : path,
-      body: isEmptyBody ? new Uint8Array(0) : new TextEncoder().encode(JSON.stringify(bodyParams)),
+      body:
+        __probe_body !== undefined
+          ? new TextEncoder().encode(JSON.stringify(__probe_body))
+          : isEmptyBody
+            ? new Uint8Array(0)
+            : new TextEncoder().encode(JSON.stringify(bodyParams)),
       subscription: !!spec.subscription,
       streamMode: spec.streamMode ?? (spec.subscription ? 'subscription' : 'unary'),
       responseType: spec.responseType,

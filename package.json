@@ -1,6 +1,6 @@
 {
   "name": "botark",
-  "version": "0.13.4",
+  "version": "0.13.5",
   "private": false,
   "description": "BotArk — all your personal AI agents in one native desktop workspace",
   "main": "./out/main/index.js",

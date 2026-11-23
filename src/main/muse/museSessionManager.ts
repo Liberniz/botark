@@ -1508,23 +1508,27 @@ export class MuseSessionManager {
   // userData, and return the first response that does not throw. Once
   // the winning shape is known this collapses back to a single call.
   private async startSessionProbe(accountId: string): Promise<unknown> {
+    // Probe v2: v1 proved stuffing origin/lifecycle into params (16
+    // shapes) changes nothing. Vary the ENVELOPE PATH (the official
+    // registry lists session.start as /session/start, without /api) and
+    // put origin/lifecycle as TOP-LEVEL body fields next to
+    // method/params instead of inside params.
     const candidates: Array<Record<string, unknown>> = [
-      { origin: 'web', lifecycle: 'persistent' },
-      { origin: 'web', lifecycle: 'ephemeral' },
-      { origin: 'chat', lifecycle: 'persistent' },
-      { origin: 'user', lifecycle: 'persistent' },
-      { origin: 'desktop', lifecycle: 'persistent' },
-      { origin: 'muse', lifecycle: 'persistent' },
-      { origin: 'app', lifecycle: 'persistent' },
-      { origin: 'web', lifecycle: 'active' },
-      { origin: 'web', lifecycle: 'standard' },
-      { origin: 'web' },
-      { lifecycle: 'persistent' },
-      { origin: { kind: 'web' }, lifecycle: 'persistent' },
-      { origin: { type: 'web' }, lifecycle: 'persistent' },
-      { session_origin: 'web', session_lifecycle: 'persistent' },
-      { origin: 'WEB', lifecycle: 'PERSISTENT' },
-      { origin: 'hatch', lifecycle: 'persistent' }
+      { __probe_path: '/session/start', __probe_body: { method: '/api/session/start', params: {} } },
+      { __probe_path: '/session/start', __probe_body: { method: '/session/start', params: {} } },
+      { __probe_body: { method: '/api/session/start', params: {}, origin: 'web', lifecycle: 'persistent' } },
+      { __probe_body: { method: '/api/session/start', params: {}, origin: 'hatch-web', lifecycle: 'interactive' } },
+      {
+        __probe_path: '/session/start',
+        __probe_body: { method: '/api/session/start', params: { origin: 'web', lifecycle: 'persistent' } }
+      },
+      {
+        __probe_body: { method: '/api/session/start', params: {}, origin: { app: 'hatch-web' }, lifecycle: 'interactive' }
+      },
+      {
+        __probe_body: { method: '/api/session/start', params: {}, session_origin: 'web', session_lifecycle: 'persistent' }
+      },
+      { __probe_path: '/session/start', __probe_body: {} }
     ]
     const lines: string[] = [`session.start probe ${new Date().toISOString()}`]
     let lastError: unknown = null
